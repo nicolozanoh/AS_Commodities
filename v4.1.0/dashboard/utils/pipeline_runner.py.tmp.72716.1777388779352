@@ -1,0 +1,213 @@
+"""
+Ejecuta el pipeline en un proceso separado (subprocess) y escribe stdout/stderr
+a un archivo de log que el dashboard puede leer en vivo (tail).
+
+Esto permite que Streamlit no se quede bloqueado mientras corre el pipeline,
+y el usuario puede navegar entre páginas sin perder la ejecución.
+"""
+
+import json
+import os
+import platform
+import signal
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+
+# pipeline_runner.py → dashboard/utils/ → dashboard/ → project root
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# Carpeta donde guardamos PID + logs de la ejecución activa
+RUNS_DIR = PROJECT_ROOT / "data" / "runs"
+RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
+PID_FILE = RUNS_DIR / "current.pid"
+LOG_FILE = RUNS_DIR / "current.log"
+META_FILE = RUNS_DIR / "current.json"
+
+
+def is_running() -> bool:
+    """Verifica si hay un pipeline corriendo actualmente."""
+    if not PID_FILE.exists():
+        return False
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except (ValueError, OSError):
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        # Process exists but we don't have permission to signal it (Windows)
+        return True
+    except (OSError, ProcessLookupError):
+        PID_FILE.unlink(missing_ok=True)
+        return False
+
+
+def get_current_run_meta() -> Optional[dict]:
+    """Devuelve metadata (commodity, fechas, inicio) del run actual."""
+    if not META_FILE.exists():
+        return None
+    try:
+        return json.loads(META_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def start_pipeline(
+    commodity: str,
+    queries: List[str],
+    start_date: str,
+    end_date: str,
+    main_script: Path,
+    funciones: Optional[List[str]] = None,
+    modelos: Optional[List[str]] = None,
+    api_keys: Optional[dict] = None,
+    python_exec: Optional[str] = None,
+    extra_args: Optional[List[str]] = None,
+    summary_date: Optional[str] = None,
+) -> int:
+    """
+    Lanza el pipeline en background.
+
+    Asume que `main_script` (típicamente main.py del proyecto) acepta:
+        --commodity <key>
+        --start <YYYY-MM-DD>
+        --end <YYYY-MM-DD>
+        --queries "<q1>" "<q2>" ...
+        --funciones "TRAER NOTICIAS" "ANALIZAR SENTIMIENTOS" ...
+        --modelos "ZERO-SHOT" "FINBERT" ...
+
+    Devuelve el PID del proceso lanzado.
+    """
+    if is_running():
+        raise RuntimeError(
+            "Ya hay un pipeline en ejecución. Espera a que termine o detenlo."
+        )
+
+    cmd = [
+        python_exec or sys.executable,
+        "-u",  # unbuffered → logs aparecen en vivo
+        str(main_script),
+        "--commodity", commodity,
+        "--start", start_date,
+        "--end", end_date,
+        "--queries", *queries,
+    ]
+    if funciones:
+        cmd.extend(["--funciones", *funciones])
+    if modelos:
+        cmd.extend(["--modelos", *modelos])
+    if summary_date:
+        cmd.extend(["--summary-date", summary_date])
+    if extra_args:
+        cmd.extend(extra_args)
+
+    # Env vars: hereda el entorno actual e inyecta las API keys
+    env = os.environ.copy()
+    if api_keys:
+        env.update(api_keys)
+
+    # Abrimos el log en modo write (truncar el anterior)
+    log_f = open(LOG_FILE, "w", encoding="utf-8", buffering=1)
+    log_f.write(f"[dashboard] Iniciando: {' '.join(cmd)}\n")
+    log_f.flush()
+
+    # En Windows: DETACHED_PROCESS evita heredar la consola del padre
+    # (que causa el KeyboardInterrupt en el WMI de Python 3.14).
+    # En Unix: start_new_session cumple el mismo propósito.
+    if platform.system() == "Windows":
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            env=env,
+        )
+    else:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            env=env,
+        )
+
+    PID_FILE.write_text(str(proc.pid))
+    META_FILE.write_text(
+        json.dumps(
+            {
+                "pid": proc.pid,
+                "commodity": commodity,
+                "queries": queries,
+                "start_date": start_date,
+                "end_date": end_date,
+                "funciones": funciones or [],
+                "modelos": modelos or [],
+                "started_at": datetime.now().isoformat(timespec="seconds"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return proc.pid
+
+
+def stop_pipeline() -> bool:
+    """Intenta detener el pipeline activo. Devuelve True si lo logró."""
+    if not PID_FILE.exists():
+        return False
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        if platform.system() == "Windows":
+            subprocess.call(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        PID_FILE.unlink(missing_ok=True)
+        return True
+    except (OSError, ProcessLookupError, ValueError):
+        PID_FILE.unlink(missing_ok=True)
+        return False
+
+
+def tail_log(n_lines: int = 200) -> str:
+    """Devuelve las últimas n líneas del log actual."""
+    if not LOG_FILE.exists():
+        return "(sin logs todavía)"
+    with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+    return "".join(lines[-n_lines:])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Snippet mínimo para que tu main.py acepte los args que este runner envía:
+#
+# if __name__ == "__main__":
+#     import argparse
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--commodity",  required=True)
+#     parser.add_argument("--start",      required=True)
+#     parser.add_argument("--end",        required=True)
+#     parser.add_argument("--queries",    nargs="+", required=True)
+#     parser.add_argument("--funciones",  nargs="+", default=[])
+#     parser.add_argument("--modelos",    nargs="+", default=[])
+#     args = parser.parse_args()
+#
+#     from src.pipeline.pipeline import run_pipeline
+#     run_pipeline(
+#         commodity=args.commodity,
+#         queries=args.queries,
+#         start_date=args.start,
+#         end_date=args.end,
+#         funciones=args.funciones,
+#         modelos=args.modelos,
+#     )
+# ─────────────────────────────────────────────────────────────────────────────

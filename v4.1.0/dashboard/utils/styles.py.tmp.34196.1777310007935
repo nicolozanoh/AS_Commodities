@@ -1,0 +1,94 @@
+import streamlit as st
+
+_CSS = """
+<style>
+/* Layout */
+.main > div { padding-top: 1.5rem; }
+
+/* Headings */
+h1 {
+    color: #004070 !important;
+    font-weight: 700 !important;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #c3a572;
+    margin-bottom: 1.5rem !important;
+}
+h2, h3 { color: #004070 !important; font-weight: 600 !important; }
+
+/* Metric cards */
+[data-testid="stMetric"] {
+    background-color: #f4f5f7;
+    border-left: 3px solid #004070;
+    padding: 1rem 1.2rem !important;
+    border-radius: 4px;
+}
+[data-testid="stMetricLabel"] > div {
+    color: #a8aaab !important;
+    font-size: 0.7rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+[data-testid="stMetricValue"] > div {
+    color: #004070 !important;
+    font-weight: 700 !important;
+}
+
+/* Logo header */
+[data-testid="stSidebarHeader"] {
+    padding: 0 !important;
+    height: auto !important;
+}
+[data-testid="stSidebarHeader"] img {
+    width: 220px !important;
+    height: 220px !important;
+    max-height: none !important;
+    object-fit: contain !important;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: #f4f5f7 !important;
+    border-right: 1px solid #dde0e4 !important;
+}
+[data-testid="stSidebar"] h2 {
+    font-size: 0.85rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* Buttons */
+button[kind="primary"] {
+    background-color: #004070 !important;
+    border: none !important;
+    color: #ffffff !important;
+    border-radius: 4px !important;
+    font-weight: 500 !important;
+}
+button[kind="primary"]:hover { background-color: #003560 !important; }
+button[kind="secondary"] {
+    background-color: transparent !important;
+    color: #004070 !important;
+    border: 1.5px solid #004070 !important;
+    border-radius: 4px !important;
+}
+.stDownloadButton > button {
+    background-color: transparent !important;
+    color: #004070 !important;
+    border: 1.5px solid #004070 !important;
+    border-radius: 4px !important;
+}
+
+/* Divider */
+hr { border-top: 1px solid #dde0e4 !important; }
+
+/* Caption */
+.stCaption, [data-testid="stCaptionContainer"] { color: #a8aaab !important; }
+
+/* Code block (logs) */
+[data-testid="stCode"] { border: 1px solid #dde0e4; border-radius: 4px; }
+</style>
+"""
+
+
+def apply_styles() -> None:
+    st.markdown(_CSS, unsafe_allow_html=True)

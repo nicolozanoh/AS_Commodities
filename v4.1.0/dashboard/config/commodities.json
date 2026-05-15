@@ -1,0 +1,56 @@
+{
+  "oro": {
+    "label": "Oro",
+    "queries": [
+      "gold price"
+    ]
+  },
+  "petroleo": {
+    "label": "Petróleo",
+    "queries": [
+      "oil price -palm"
+    ]
+  },
+  "cafe": {
+    "label": "Café",
+    "queries": [
+      "international coffee price",
+      "Brazil coffee production",
+      "Vietnam coffee production",
+      "Colombia coffe production",
+      "Arabica coffee price",
+      "Robusta coffe price"
+    ]
+  },
+  "niquel": {
+    "label": "Níquel",
+    "queries": [
+      "nickel price",
+      "Indonesia nickel production",
+      "China nickel demand"
+    ]
+  },
+  "carbon": {
+    "label": "Carbón",
+    "queries": [
+      "coal price",
+      "Indonesia coal production",
+      "China coal production",
+      "Russia coal production"
+    ]
+  },
+  "flores": {
+    "label": "Flores",
+    "queries": [
+      "Flowers price"
+    ]
+  },
+  "pib": {
+    "label": "PIB",
+    "queries": [
+      "PIB Colombia",
+      "Producto Interno Bruto Colombia",
+      "Crecimiento Economia Colombia"
+    ]
+  }
+}

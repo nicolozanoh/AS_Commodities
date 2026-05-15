@@ -1,0 +1,23 @@
+{
+  "pid": 43144,
+  "commodity": "pib",
+  "queries": [
+    "PIB Colombia",
+    "Producto Interno Bruto Colombia",
+    "Crecimiento Economia Colombia"
+  ],
+  "start_date": "2026-05-07",
+  "end_date": "2026-05-08",
+  "funciones": [
+    "TRAER NOTICIAS",
+    "ANALIZAR SENTIMIENTOS",
+    "AGREGAR RESULTADOS"
+  ],
+  "modelos": [
+    "ZERO-SHOT",
+    "ROBERTUITO",
+    "GEMINI",
+    "CLAUDE"
+  ],
+  "started_at": "2026-05-15T10:35:51"
+}
