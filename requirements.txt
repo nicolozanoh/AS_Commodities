@@ -1,4 +1,28 @@
+# ─── Dashboard ─────────────────────────────────────────────────────────────
 streamlit>=1.36
 pandas>=2.0
 plotly>=5.20
 openpyxl>=3.1
+
+# ─── Scraping ──────────────────────────────────────────────────────────────
+selenium>=4.20
+beautifulsoup4>=4.12
+tqdm>=4.66
+python-dateutil>=2.8
+
+# ─── Prices ────────────────────────────────────────────────────────────────
+yfinance>=0.2.40
+
+# ─── Analysis / plots ──────────────────────────────────────────────────────
+matplotlib>=3.8
+wordcloud>=1.9
+
+# ─── Sentiment models (HuggingFace transformer-based) ──────────────────────
+# CPU wheel — HF Spaces free tier has no GPU. Pinning torch keeps installs deterministic.
+torch>=2.2,<3
+transformers>=4.40
+huggingface-hub>=0.23
+
+# ─── API-based LLM models ──────────────────────────────────────────────────
+anthropic>=0.30
+google-genai>=0.3

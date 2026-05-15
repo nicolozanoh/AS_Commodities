@@ -2,6 +2,7 @@ import random
 import os
 import io
 import sys
+import platform
 import contextlib
 import pandas as pd
 from tqdm import tqdm
@@ -12,8 +13,6 @@ from datetime import datetime, date, timedelta, time
 from config import ROOT, GOOGLE_CSS_CONFIG, GOOGLE_TITLE_BLOCKLIST
 from urllib.parse import unquote, urlencode, urljoin, quote
 from selenium import webdriver
-from selenium.webdriver.edge.options import Options
-from selenium.webdriver.edge.service import Service as EdgeService
 
 import src.utils.date_utils as date_utils
 
@@ -129,22 +128,56 @@ class GoogleScraper(BaseScraper):
                 driver.quit()
 
     def _create_driver(self):
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--log-level=3")
-        options.add_argument("--silent")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        options.add_argument("--lang=es-ES")
-        options.add_argument("--window-size=1920,1080")
+        # On Linux (Hugging Face Spaces, Docker, etc.) we use Chromium installed
+        # via packages.txt. On Windows we keep Edge — the user's local dev setup.
+        if platform.system() == "Linux":
+            return self._create_chromium_driver()
+        return self._create_edge_driver()
+
+    def _create_edge_driver(self):
+        from selenium.webdriver.edge.options import Options as EdgeOptions
+        from selenium.webdriver.edge.service import Service as EdgeService
+
+        options = EdgeOptions()
+        for arg in self._common_args():
+            options.add_argument(arg)
         options.add_experimental_option("excludeSwitches", ['enable-logging', "enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
         service = EdgeService(log_path=open(os.devnull, 'w'), log_output=open(os.devnull, 'w'))
         driver = webdriver.Edge(options=options, service=service)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
+
+    def _create_chromium_driver(self):
+        from selenium.webdriver.chrome.options import Options as ChromeOptions
+        from selenium.webdriver.chrome.service import Service as ChromeService
+
+        options = ChromeOptions()
+        for arg in self._common_args():
+            options.add_argument(arg)
+        # HF Spaces installs chromium via packages.txt at these standard paths.
+        chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
+        chromedriver = os.environ.get("CHROMEDRIVER", "/usr/bin/chromedriver")
+        if os.path.exists(chrome_bin):
+            options.binary_location = chrome_bin
+        service = ChromeService(executable_path=chromedriver) if os.path.exists(chromedriver) else ChromeService()
+        driver = webdriver.Chrome(options=options, service=service)
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+
+    @staticmethod
+    def _common_args():
+        return [
+            "--headless=new",
+            "--no-sandbox",
+            "--log-level=3",
+            "--silent",
+            "--disable-dev-shm-usage",
+            "--disable-blink-features=AutomationControlled",
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "--lang=es-ES",
+            "--window-size=1920,1080",
+        ]
 
     def selenium_request(self, driver, query, date, index):
         try:
