@@ -40,7 +40,7 @@ class GoogleScraper(BaseScraper):
 
     def fetch(self):
         driver = None
-        retries = 5
+        #retries = 5
         try:
             start = self.commodity["start_date"]
             end = self.commodity["end_date"]
@@ -59,52 +59,53 @@ class GoogleScraper(BaseScraper):
             days = [start + timedelta(days=i) for i in range(total_days)]
 
             total_noticias = query_number * news_number * len(days)
-
-            news_number = news_number * query_number
+            day_total_target = news_number * query_number
 
             print(f"[GoogleScraper] Commodity  : {self.commodity['name']}")
             print(f"[GoogleScraper] Periodo    : {start} -> {end}  ({total_days} dias)")
             print(f"[GoogleScraper] Query Number      : {query_number}")
-            print(f"[GoogleScraper] Noticias   : {news_number}/dia  ({total_noticias} pendientes)")
+            print(f"[GoogleScraper] Noticias   : {news_number}/query/dia  ({total_noticias} pendientes)")
 
             driver = self._create_driver()
+            #self._warm_up(driver)
+            #sleep(random.uniform(5, 12))
+
             with tqdm(total=total_noticias, desc=f"Google News - {self.commodity['name'].upper()}", unit="noticia") as pbar:
                 for query in self.commodity["search_query"]:
                     d = start
                     while d <= end:
                         date_key = d.strftime("%Y-%m-%d")
+                        tqdm.write(f"[GoogleScraper] Obteniendo noticias {date_key}.")
                         already_have = existing_per_day.get(date_key, 0)
-                        remaining = news_number - already_have
-
-                        if remaining <= 0:
+                        if already_have >= day_total_target:
                             tqdm.write(f"[GoogleScraper] {date_key}: ya tiene {already_have} noticias, se omite.")
                             d += timedelta(days=1)
                             continue
+
+                        remaining = news_number
 
                         page_index = 0
                         articulos_dia: list[NewsArticle] = []
 
                         while len(articulos_dia) < remaining:
                             date_str = d.strftime("%m/%d/%Y")
-                            attempt = 0
                             soup, blocked = self.selenium_request(driver, query, date_str, page_index)
                             
                             cards = soup.find_all('div', class_=GOOGLE_CSS_CONFIG["noticias"])
 
-                            if blocked:
-                                for attempt in range(retries):
-                                    tqdm.write(f"[GoogleScraper] Bot detected retry {attempt + 1} of {retries}.")
-                                    driver.quit()
-                                    driver = self._create_driver()
-                                    wait = (2 ** attempt) * 60 + random.uniform(0, 30)
-                                    sleep(wait)
-                                    driver = self._create_driver()
-                                    
-                                    soup, blocked = self.selenium_request(driver, query, date_str, page_index)
-                                    cards = soup.find_all('div', class_=GOOGLE_CSS_CONFIG["noticias"])
+                            # if blocked:
+                            #     for attempt in range(retries):
+                            #         tqdm.write(f"[GoogleScraper] Bot detected retry {attempt + 1} of {retries}.")
+                            #         driver.quit()
+                            #         wait = (2 ** attempt) * 60 + random.uniform(0, 30)
+                            #         sleep(wait)
+                            #         driver = self._create_driver()
 
-                                    if not blocked:
-                                        break
+                            #         soup, blocked = self.selenium_request(driver, query, date_str, page_index)
+                            #         cards = soup.find_all('div', class_=GOOGLE_CSS_CONFIG["noticias"])
+
+                            #         if not blocked:
+                            #             break
                             
                             if not cards:
                                 now = datetime.now().strftime("%Y-%m-%dT%H%M%S")
@@ -157,7 +158,7 @@ class GoogleScraper(BaseScraper):
 
     def _create_driver(self):
         options = Options()
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--log-level=3")
         options.add_argument("--silent")
@@ -166,6 +167,11 @@ class GoogleScraper(BaseScraper):
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         options.add_argument("--lang=es-ES")
         options.add_argument("--window-size=1920,1080")
+        
+        profile_dir = ROOT / "log" / "edge_profile"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        #options.add_argument(f"--user-data-dir={profile_dir}")
+
         options.add_experimental_option("excludeSwitches", ['enable-logging', "enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
         service = EdgeService(log_path=open(os.devnull, 'w'), log_output=open(os.devnull, 'w'))
@@ -173,7 +179,19 @@ class GoogleScraper(BaseScraper):
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
+    def _warm_up(self, driver):
+        """Visita Google de forma 'inocente' antes de las queries agresivas."""
+        try:
+            tqdm.write("[GoogleScraper] Warm-up: estableciendo sesion...")
+            driver.get("https://www.google.com")
+            sleep(random.uniform(3, 6))
 
+            # Una búsqueda normal, sin tbm=nws ni operadores ni rango de fechas
+            driver.get("https://www.google.com/search?q=noticias+colombia")
+            sleep(random.uniform(4, 8))
+        except Exception as e:
+            # El warm-up es best-effort: si falla, no abortamos la corrida
+            tqdm.write(f"[GoogleScraper] Warm-up fallido (se continua igual): {e}")
 
     def selenium_request(self, driver, query, date, index):
         try:
