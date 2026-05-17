@@ -125,6 +125,10 @@ class GoogleScraper(BaseScraper):
                                         f.write(str(soup))
 
                                     tqdm.write(f"[GoogleScraper] HTML de depuracion guardado en {filename}")
+
+                                if blocked:
+                                    tqdm.write(f"[GoogleScraper] Bot detected.")
+                                
                                 break
 
                             i = 0
@@ -158,7 +162,7 @@ class GoogleScraper(BaseScraper):
 
     def _create_driver(self):
         options = Options()
-        options.add_argument("--headless=new")
+        #options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--log-level=3")
         options.add_argument("--silent")
