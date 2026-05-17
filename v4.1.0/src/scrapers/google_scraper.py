@@ -133,15 +133,16 @@ class GoogleScraper(BaseScraper):
                                 
 
                             i = 0
-                            while i < len(cards) - 1 and len(articulos_dia) < remaining:
-                                articulo = self.parse(cards[i], d.strftime("%Y-%m-%d"))
-                                if articulo:
-                                    articulos_dia.append(articulo)
-                                    pbar.update(1)
-                                i += 1
+                            if not blocked:
+                                while i < len(cards) - 1 and len(articulos_dia) < remaining:
+                                    articulo = self.parse(cards[i], d.strftime("%Y-%m-%d"))
+                                    if articulo:
+                                        articulos_dia.append(articulo)
+                                        pbar.update(1)
+                                    i += 1
 
-                            sleep(random.uniform(3, 6))
-                            page_index += 1
+                                sleep(random.uniform(3, 6))
+                                page_index += 1
 
                         self.articles.extend(articulos_dia[:remaining])
                         d += timedelta(days=1)
