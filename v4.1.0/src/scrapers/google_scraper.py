@@ -2,7 +2,6 @@ import random
 import os
 import io
 import sys
-import platform
 import contextlib
 import pandas as pd
 from tqdm import tqdm
@@ -13,6 +12,8 @@ from datetime import datetime, date, timedelta, time
 from config import ROOT, GOOGLE_CSS_CONFIG, GOOGLE_TITLE_BLOCKLIST
 from urllib.parse import unquote, urlencode, urljoin, quote
 from selenium import webdriver
+from selenium.webdriver.edge.options import Options
+from selenium.webdriver.edge.service import Service as EdgeService
 
 import src.utils.date_utils as date_utils
 
@@ -21,11 +22,25 @@ class GoogleScraper(BaseScraper):
     URL_BASE = "https://www.google.com"
     SCRAPPER = "GOOGLE"
 
+    _BLOCK_MARKERS = (
+        'id="captcha-form"',
+        'g-recaptcha',
+        'solveSimpleChallenge',
+        'data-sitekey="6LdLLIMbAAAAAIl-KLj9p1ePhM-4LCCDbjtJLqRO"',
+    )
+
+    _BLOCK_TEXTS = (
+        "unusual traffic",
+        "tráfico inusual",
+        "trafico inusual",  # por si el HTML viene sin acentos
+    )
+
     def __init__(self, commodity):
         super().__init__(commodity, self.SCRAPPER)
 
     def fetch(self):
         driver = None
+        retries = 5
         try:
             start = self.commodity["start_date"]
             end = self.commodity["end_date"]
@@ -42,11 +57,6 @@ class GoogleScraper(BaseScraper):
                 existing_per_day = _existing.groupby("published_date").size().to_dict()
 
             days = [start + timedelta(days=i) for i in range(total_days)]
-            # days = [start + timedelta(days=i) for i in range(total_days)]
-            # total_noticias = sum(
-            #     max(0, news_number - existing_per_day.get(d.strftime("%Y-%m-%d"), 0))
-            #     for d in days
-            # )
 
             total_noticias = query_number * news_number * len(days)
 
@@ -58,10 +68,9 @@ class GoogleScraper(BaseScraper):
             print(f"[GoogleScraper] Noticias   : {news_number}/dia  ({total_noticias} pendientes)")
 
             driver = self._create_driver()
-            d = start
-
             with tqdm(total=total_noticias, desc=f"Google News - {self.commodity['name'].upper()}", unit="noticia") as pbar:
                 for query in self.commodity["search_query"]:
+                    d = start
                     while d <= end:
                         date_key = d.strftime("%Y-%m-%d")
                         already_have = existing_per_day.get(date_key, 0)
@@ -77,25 +86,44 @@ class GoogleScraper(BaseScraper):
 
                         while len(articulos_dia) < remaining:
                             date_str = d.strftime("%m/%d/%Y")
-                            soup = self.selenium_request(driver, query, date_str, page_index)
+                            attempt = 0
+                            soup, blocked = self.selenium_request(driver, query, date_str, page_index)
+                            
                             cards = soup.find_all('div', class_=GOOGLE_CSS_CONFIG["noticias"])
 
+                            if blocked:
+                                for attempt in range(retries):
+                                    tqdm.write(f"[GoogleScraper] Bot detected retry {attempt + 1} of {retries}.")
+                                    driver.quit()
+                                    driver = self._create_driver()
+                                    wait = (2 ** attempt) * 60 + random.uniform(0, 30)
+                                    sleep(wait)
+                                    driver = self._create_driver()
+                                    
+                                    soup, blocked = self.selenium_request(driver, query, date_str, page_index)
+                                    cards = soup.find_all('div', class_=GOOGLE_CSS_CONFIG["noticias"])
+
+                                    if not blocked:
+                                        break
+                            
                             if not cards:
                                 now = datetime.now().strftime("%Y-%m-%dT%H%M%S")
                                 filename = ROOT / "log" / "debug" / f"html_google_news_{now}.html"
                                 filename.parent.mkdir(parents=True, exist_ok=True)
 
                                 no_results = soup.find('div', class_=GOOGLE_CSS_CONFIG["no_results"])
+                                
                                 if no_results:
                                     texto = no_results.find("p")
                                     if texto and "No se han encontrado noticias para tu busqueda (" in texto.get_text():
                                         tqdm.write(f"[GoogleScraper] Sin resultados para {d.strftime('%Y-%m-%d')} - {query}")
                                         break
 
-                                with open(filename, "w", encoding='utf-8') as f:
-                                    f.write(str(soup))
+                                if not blocked:
+                                    with open(filename, "w", encoding='utf-8') as f:
+                                        f.write(str(soup))
 
-                                tqdm.write(f"[GoogleScraper] HTML de depuracion guardado en {filename}")
+                                    tqdm.write(f"[GoogleScraper] HTML de depuracion guardado en {filename}")
                                 break
 
                             i = 0
@@ -128,19 +156,16 @@ class GoogleScraper(BaseScraper):
                 driver.quit()
 
     def _create_driver(self):
-        # On Linux (Hugging Face Spaces, Docker, etc.) we use Chromium installed
-        # via packages.txt. On Windows we keep Edge — the user's local dev setup.
-        if platform.system() == "Linux":
-            return self._create_chromium_driver()
-        return self._create_edge_driver()
-
-    def _create_edge_driver(self):
-        from selenium.webdriver.edge.options import Options as EdgeOptions
-        from selenium.webdriver.edge.service import Service as EdgeService
-
-        options = EdgeOptions()
-        for arg in self._common_args():
-            options.add_argument(arg)
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--log-level=3")
+        options.add_argument("--silent")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        options.add_argument("--lang=es-ES")
+        options.add_argument("--window-size=1920,1080")
         options.add_experimental_option("excludeSwitches", ['enable-logging', "enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
         service = EdgeService(log_path=open(os.devnull, 'w'), log_output=open(os.devnull, 'w'))
@@ -148,36 +173,7 @@ class GoogleScraper(BaseScraper):
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
-    def _create_chromium_driver(self):
-        from selenium.webdriver.chrome.options import Options as ChromeOptions
-        from selenium.webdriver.chrome.service import Service as ChromeService
 
-        options = ChromeOptions()
-        for arg in self._common_args():
-            options.add_argument(arg)
-        # HF Spaces installs chromium via packages.txt at these standard paths.
-        chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
-        chromedriver = os.environ.get("CHROMEDRIVER", "/usr/bin/chromedriver")
-        if os.path.exists(chrome_bin):
-            options.binary_location = chrome_bin
-        service = ChromeService(executable_path=chromedriver) if os.path.exists(chromedriver) else ChromeService()
-        driver = webdriver.Chrome(options=options, service=service)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return driver
-
-    @staticmethod
-    def _common_args():
-        return [
-            "--headless=new",
-            "--no-sandbox",
-            "--log-level=3",
-            "--silent",
-            "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled",
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "--lang=es-ES",
-            "--window-size=1920,1080",
-        ]
 
     def selenium_request(self, driver, query, date, index):
         try:
@@ -187,7 +183,9 @@ class GoogleScraper(BaseScraper):
             driver.get(url)
             sleep(2)
             soup = BeautifulSoup(driver.page_source, "html.parser")
-            return soup
+            
+            return soup, self._is_blocked(driver, soup)
+        
         except Exception as e:
             raise Exception(f"[GoogleScraper] Error en la peticion: {str(e)}")
 
@@ -231,3 +229,19 @@ class GoogleScraper(BaseScraper):
                 link=enlace_texto
             )
         return None
+    
+    def _is_blocked(self, driver, soup) -> bool:
+        if "/sorry/" in (driver.current_url or ""):
+            return True
+        
+        if soup.find("form", id="captcha-form") is not None:
+            return True
+        if soup.find("div", class_="g-recaptcha") is not None:
+            return True
+       
+        html = str(soup).lower()
+        if any(m.lower() in html for m in GoogleScraper._BLOCK_MARKERS):
+            return True
+        if any(t in html for t in GoogleScraper._BLOCK_TEXTS):
+            return True
+        return False
