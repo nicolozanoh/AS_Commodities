@@ -125,11 +125,12 @@ class GoogleScraper(BaseScraper):
                                         f.write(str(soup))
 
                                     tqdm.write(f"[GoogleScraper] HTML de depuracion guardado en {filename}")
+                                    break
 
                                 if blocked:
                                     tqdm.write(f"[GoogleScraper] Bot detected.")
                                 
-                                break
+                                
 
                             i = 0
                             while i < len(cards) - 1 and len(articulos_dia) < remaining:
