@@ -162,7 +162,7 @@ class GoogleScraper(BaseScraper):
 
     def _create_driver(self):
         options = Options()
-        #options.add_argument("--headless=new")
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--log-level=3")
         options.add_argument("--silent")
